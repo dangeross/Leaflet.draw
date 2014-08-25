@@ -782,6 +782,12 @@ L.Draw.SimpleShape = L.Draw.Feature.extend({
 		this._isDrawing = false;
 	},
 
+	_getTooltipText: function () {
+		return {
+			text: this._endLabelText
+		};
+	},
+
 	_onMouseDown: function (e) {
 		this._isDrawing = true;
 		this._startLatLng = e.latlng;
@@ -796,7 +802,7 @@ L.Draw.SimpleShape = L.Draw.Feature.extend({
 
 		this._tooltip.updatePosition(latlng);
 		if (this._isDrawing) {
-			this._tooltip.updateContent({ text: this._endLabelText });
+			this._tooltip.updateContent(this._getTooltipText());
 			this._drawShape(latlng);
 		}
 	},
@@ -828,7 +834,8 @@ L.Draw.Rectangle = L.Draw.SimpleShape.extend({
 			fillColor: null, //same as color by default
 			fillOpacity: 0.2,
 			clickable: true
-		}
+		},
+		metric: true // Whether to use the metric meaurement system or imperial
 	},
 
 	initialize: function (map, options) {
@@ -852,6 +859,23 @@ L.Draw.Rectangle = L.Draw.SimpleShape.extend({
 	_fireCreatedEvent: function () {
 		var rectangle = new L.Rectangle(this._shape.getBounds(), this.options.shapeOptions);
 		L.Draw.SimpleShape.prototype._fireCreatedEvent.call(this, rectangle);
+	},
+
+	_getTooltipText: function () {
+		var tooltipText = L.Draw.SimpleShape.prototype._getTooltipText.call(this),
+			shape = this._shape,
+			latLngs, area, subtext;
+
+		if (shape) {
+			latLngs = this._shape.getLatLngs();
+			area = L.GeometryUtil.geodesicArea(latLngs);
+			subtext = L.GeometryUtil.readableArea(area, this.options.metric);
+		}
+
+		return {
+			text: tooltipText.text,
+			subtext: subtext
+		};
 	}
 });
 
@@ -2543,15 +2567,15 @@ L.EditToolbar.Edit = L.Handler.extend({
 
 		L.Handler.prototype.enable.call(this);
 		this._featureGroup
-			.on('layeradd', this._enableLayerEdit, this)
-			.on('layerremove', this._disableLayerEdit, this);
+			.on('layeradd', this._applyToChildLayers(this._enableLayerEdit, this), this)
+			.on('layerremove', this._applyToChildLayers(this._disableLayerEdit, this), this);
 	},
 
 	disable: function () {
 		if (!this._enabled) { return; }
 		this._featureGroup
-			.off('layeradd', this._enableLayerEdit, this)
-			.off('layerremove', this._disableLayerEdit, this);
+			.off('layeradd', this._applyToChildLayers(this._enableLayerEdit, this), this)
+			.off('layerremove', this._applyToChildLayers(this._disableLayerEdit, this), this);
 		L.Handler.prototype.disable.call(this);
 		this._map.fire('draw:editstop', { handler: this.type });
 		this.fire('disabled', {handler: this.type});
@@ -2563,7 +2587,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (map) {
 			map.getContainer().focus();
 
-			this._featureGroup.eachLayer(this._enableLayerEdit, this);
+			this._featureGroup.eachLayer(this._applyToChildLayers(this._enableLayerEdit, this), this);
 
 			this._tooltip = new L.Tooltip(this._map);
 			this._tooltip.updateContent({
@@ -2578,7 +2602,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 	removeHooks: function () {
 		if (this._map) {
 			// Clean up selected layers.
-			this._featureGroup.eachLayer(this._disableLayerEdit, this);
+			this._featureGroup.eachLayer(this._applyToChildLayers(this._disableLayerEdit, this), this);
 
 			// Clear the backups of the original layers
 			this._uneditedLayerProps = {};
@@ -2591,20 +2615,37 @@ L.EditToolbar.Edit = L.Handler.extend({
 	},
 
 	revertLayers: function () {
-		this._featureGroup.eachLayer(function (layer) {
-			this._revertLayer(layer);
-		}, this);
+		this._featureGroup.eachLayer(this._applyToChildLayers(this._revertLayer, this), this);
 	},
 
 	save: function () {
 		var editedLayers = new L.LayerGroup();
-		this._featureGroup.eachLayer(function (layer) {
-			if (layer.edited) {
-				editedLayers.addLayer(layer);
-				layer.edited = false;
+
+		this._featureGroup.eachLayer(function (editableLayer) {
+			if (editableLayer._layers !== undefined) {
+				editableLayer.eachLayer(function (layer) {
+					if (layer.edited) {
+						editedLayers.addLayer(editableLayer);
+						layer.edited = false;
+					}
+				});
+			} else if (editableLayer.edited) {
+				editedLayers.addLayer(editableLayer);
+				editableLayer.edited = false;
 			}
 		});
+
 		this._map.fire('draw:edited', {layers: editedLayers});
+	},
+
+	_applyToChildLayers: function (method, context) {
+		return function (layer) {
+			if (layer._layers !== undefined) {
+				layer.eachLayer(method, context);
+			} else {
+				method.call(context, layer);
+			}
+		};
 	},
 
 	_backupLayer: function (layer) {
@@ -2718,7 +2759,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (isMarker) {
 			layer.dragging.enable();
 			layer.on('dragend', this._onMarkerDragEnd);
-		} else {
+		} else if (layer.editing) {
 			layer.editing.enable();
 		}
 	},
@@ -2731,7 +2772,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (this._selectedPathOptions) {
 			if (layer instanceof L.Marker) {
 				this._toggleMarkerHighlight(layer);
-			} else {
+			} else if (layer.options && layer.options.previousOptions) {
 				// reset the layer style to what is was before being selected
 				layer.setStyle(layer.options.previousOptions);
 				// remove the cached options for the layer object
@@ -2742,7 +2783,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (layer instanceof L.Marker) {
 			layer.dragging.disable();
 			layer.off('dragend', this._onMarkerDragEnd, this);
-		} else {
+		} else if (layer.editing) {
 			layer.editing.disable();
 		}
 	},
@@ -2871,9 +2912,12 @@ L.EditToolbar.Delete = L.Handler.extend({
 	_removeLayer: function (e) {
 		var layer = e.layer || e.target || e;
 
-		this._deletableLayers.removeLayer(layer);
-
-		this._deletedLayers.addLayer(layer);
+		this._deletableLayers.eachLayer(function (deletableLayer) {
+			if (deletableLayer === layer || deletableLayer.hasLayer(layer)) {
+				this._deletableLayers.removeLayer(deletableLayer);
+				this._deletedLayers.addLayer(deletableLayer);
+			}
+		}, this);
 	},
 
 	_onMouseMove: function (e) {
