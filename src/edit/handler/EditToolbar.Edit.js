@@ -36,15 +36,15 @@ L.EditToolbar.Edit = L.Handler.extend({
 
 		L.Handler.prototype.enable.call(this);
 		this._featureGroup
-			.on('layeradd', this._enableLayerEdit, this)
-			.on('layerremove', this._disableLayerEdit, this);
+			.on('layeradd', this._applyToChildLayers(this._enableLayerEdit, this), this)
+			.on('layerremove', this._applyToChildLayers(this._disableLayerEdit, this), this);
 	},
 
 	disable: function () {
 		if (!this._enabled) { return; }
 		this._featureGroup
-			.off('layeradd', this._enableLayerEdit, this)
-			.off('layerremove', this._disableLayerEdit, this);
+			.off('layeradd', this._applyToChildLayers(this._enableLayerEdit, this), this)
+			.off('layerremove', this._applyToChildLayers(this._disableLayerEdit, this), this);
 		L.Handler.prototype.disable.call(this);
 		this._map.fire('draw:editstop', { handler: this.type });
 		this.fire('disabled', {handler: this.type});
@@ -56,7 +56,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (map) {
 			map.getContainer().focus();
 
-			this._featureGroup.eachLayer(this._enableLayerEdit, this);
+			this._featureGroup.eachLayer(this._applyToChildLayers(this._enableLayerEdit, this), this);
 
 			this._tooltip = new L.Tooltip(this._map);
 			this._tooltip.updateContent({
@@ -71,7 +71,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 	removeHooks: function () {
 		if (this._map) {
 			// Clean up selected layers.
-			this._featureGroup.eachLayer(this._disableLayerEdit, this);
+			this._featureGroup.eachLayer(this._applyToChildLayers(this._disableLayerEdit, this), this);
 
 			// Clear the backups of the original layers
 			this._uneditedLayerProps = {};
@@ -84,19 +84,26 @@ L.EditToolbar.Edit = L.Handler.extend({
 	},
 
 	revertLayers: function () {
-		this._featureGroup.eachLayer(function (layer) {
-			this._revertLayer(layer);
-		}, this);
+		this._featureGroup.eachLayer(this._applyToChildLayers(this._revertLayer, this), this);
 	},
 
 	save: function () {
 		var editedLayers = new L.LayerGroup();
-		this._featureGroup.eachLayer(function (layer) {
-			if (layer.edited) {
-				editedLayers.addLayer(layer);
-				layer.edited = false;
+
+		this._featureGroup.eachLayer(function (editableLayer) {
+			if (editableLayer._layers !== undefined) {
+				editableLayer.eachLayer(function (layer) {
+					if (layer.edited) {
+						editedLayers.addLayer(editableLayer);
+						layer.edited = false;
+					}
+				});
+			} else if (editableLayer.edited) {
+				editedLayers.addLayer(editableLayer);
+				editableLayer.edited = false;
 			}
 		});
+
 		this._map.fire('draw:edited', {layers: editedLayers});
 	},
 
