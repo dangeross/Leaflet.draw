@@ -100,6 +100,16 @@ L.EditToolbar.Edit = L.Handler.extend({
 		this._map.fire('draw:edited', {layers: editedLayers});
 	},
 
+	_applyToChildLayers: function (method, context) {
+		return function (layer) {
+			if (layer._layers !== undefined) {
+				layer.eachLayer(method, context);
+			} else {
+				method.call(context, layer);
+			}
+		};
+	},
+
 	_backupLayer: function (layer) {
 		var id = L.Util.stamp(layer);
 
