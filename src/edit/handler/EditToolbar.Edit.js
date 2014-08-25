@@ -228,7 +228,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (isMarker) {
 			layer.dragging.enable();
 			layer.on('dragend', this._onMarkerDragEnd);
-		} else {
+		} else if (layer.editing) {
 			layer.editing.enable();
 		}
 	},
@@ -241,7 +241,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (this._selectedPathOptions) {
 			if (layer instanceof L.Marker) {
 				this._toggleMarkerHighlight(layer);
-			} else {
+			} else if (layer.options && layer.options.previousOptions) {
 				// reset the layer style to what is was before being selected
 				layer.setStyle(layer.options.previousOptions);
 				// remove the cached options for the layer object
@@ -252,7 +252,7 @@ L.EditToolbar.Edit = L.Handler.extend({
 		if (layer instanceof L.Marker) {
 			layer.dragging.disable();
 			layer.off('dragend', this._onMarkerDragEnd, this);
-		} else {
+		} else if (layer.editing) {
 			layer.editing.disable();
 		}
 	},
