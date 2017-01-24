@@ -1,5 +1,5 @@
 /*
- Leaflet.draw 0.4.9+abb3486, a plugin that adds drawing and editing tools to Leaflet powered maps.
+ Leaflet.draw 0.4.9+1675544, a plugin that adds drawing and editing tools to Leaflet powered maps.
  (c) 2012-2017, Jacob Toye, Jon West, Smartrak, Leaflet
 
  https://github.com/Leaflet/Leaflet.draw
@@ -8,7 +8,7 @@
 (function (window, document, undefined) {/**
  * Leaflet.draw assumes that you have already included the Leaflet library.
  */
-L.drawVersion = "0.4.9+abb3486";
+L.drawVersion = "0.4.9+1675544";
 /**
  * @class L.Draw
  * @aka Draw
@@ -1784,27 +1784,29 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		this._markers = [];
 
 		var latlngs = this._defaultShape(),
-			i, j, len, marker;
+			i, j, k, len, marker;
 
-		for (i = 0, len = latlngs.length; i < len; i++) {
+		latlngs = (latlngs[0] instanceof Array ? latlngs : [latlngs]);
 
-			marker = this._createMarker(latlngs[i], i);
-			marker.on('click', this._onMarkerClick, this);
-			this._markers.push(marker);
+		for (i = 0; i < latlngs.length; i++) {
+			this._markers.push([]);
+			for (j = 0; j < latlngs[i].length; j++) {
+				marker = this._createMarker(latlngs[i][j], j);
+				marker.on('click', this._onMarkerClick, this);
+				this._markers[i].push(marker);
+			}
 		}
 
-		var markerLeft, markerRight;
+		for (i = 0; i < this._markers.length; i++) {
+			len = this._markers[i].length;
+			for (j = 0, k = len - 1; j < len; k = j++) {
+				if (k === 0 && !(L.Polygon && (this._poly instanceof L.Polygon))) {
+					continue;
+				}
 
-		for (i = 0, j = len - 1; i < len; j = i++) {
-			if (i === 0 && !(L.Polygon && (this._poly instanceof L.Polygon))) {
-				continue;
+				this._createMiddleMarker(this._markers[i][k], this._markers[i][j]);
+				this._updatePrevNext(this._markers[i][k], this._markers[i][j]);
 			}
-
-			markerLeft = this._markers[j];
-			markerRight = this._markers[i];
-
-			this._createMiddleMarker(markerLeft, markerRight);
-			this._updatePrevNext(markerLeft, markerRight);
 		}
 	},
 
@@ -4382,7 +4384,7 @@ L.EditToolbar.Delete = L.Handler.extend({
 		var layer = e.layer || e.target || e;
 
 		this._deletableLayers.eachLayer(function (deletableLayer) {
-			if (deletableLayer === layer || deletableLayer.hasLayer(layer)) {
+			if (deletableLayer === layer || (typeof deletableLayer.hasLayer == 'function' && deletableLayer.hasLayer(layer))) {
 				this._deletableLayers.removeLayer(deletableLayer);
 				this._deletedLayers.addLayer(deletableLayer);
 

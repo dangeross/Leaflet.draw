@@ -179,27 +179,29 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		this._markers = [];
 
 		var latlngs = this._defaultShape(),
-			i, j, len, marker;
+			i, j, k, len, marker;
 
-		for (i = 0, len = latlngs.length; i < len; i++) {
+		latlngs = (latlngs[0] instanceof Array ? latlngs : [latlngs]);
 
-			marker = this._createMarker(latlngs[i], i);
-			marker.on('click', this._onMarkerClick, this);
-			this._markers.push(marker);
+		for (i = 0; i < latlngs.length; i++) {
+			this._markers.push([]);
+			for (j = 0; j < latlngs[i].length; j++) {
+				marker = this._createMarker(latlngs[i][j], j);
+				marker.on('click', this._onMarkerClick, this);
+				this._markers[i].push(marker);
+			}
 		}
 
-		var markerLeft, markerRight;
+		for (i = 0; i < this._markers.length; i++) {
+			len = this._markers[i].length;
+			for (j = 0, k = len - 1; j < len; k = j++) {
+				if (k === 0 && !(L.Polygon && (this._poly instanceof L.Polygon))) {
+					continue;
+				}
 
-		for (i = 0, j = len - 1; i < len; j = i++) {
-			if (i === 0 && !(L.Polygon && (this._poly instanceof L.Polygon))) {
-				continue;
+				this._createMiddleMarker(this._markers[i][k], this._markers[i][j]);
+				this._updatePrevNext(this._markers[i][k], this._markers[i][j]);
 			}
-
-			markerLeft = this._markers[j];
-			markerRight = this._markers[i];
-
-			this._createMiddleMarker(markerLeft, markerRight);
-			this._updatePrevNext(markerLeft, markerRight);
 		}
 	},
 
