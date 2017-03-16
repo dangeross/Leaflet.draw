@@ -1,5 +1,5 @@
 /*
- Leaflet.draw 0.4.9+1675544, a plugin that adds drawing and editing tools to Leaflet powered maps.
+ Leaflet.draw 0.4.9+bc3d0c7, a plugin that adds drawing and editing tools to Leaflet powered maps.
  (c) 2012-2017, Jacob Toye, Jon West, Smartrak, Leaflet
 
  https://github.com/Leaflet/Leaflet.draw
@@ -8,7 +8,7 @@
 (function (window, document, undefined) {/**
  * Leaflet.draw assumes that you have already included the Leaflet library.
  */
-L.drawVersion = "0.4.9+1675544";
+L.drawVersion = "0.4.9+bc3d0c7";
 /**
  * @class L.Draw
  * @aka Draw
@@ -1791,7 +1791,7 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		for (i = 0; i < latlngs.length; i++) {
 			this._markers.push([]);
 			for (j = 0; j < latlngs[i].length; j++) {
-				marker = this._createMarker(latlngs[i][j], j);
+				marker = this._createMarker(latlngs[i][j], i, j);
 				marker.on('click', this._onMarkerClick, this);
 				this._markers[i].push(marker);
 			}
@@ -1810,7 +1810,7 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		}
 	},
 
-	_createMarker: function (latlng, index) {
+	_createMarker: function (latlng, parentIndex, index) {
 		// Extending L.Marker in TouchEvents.js to include touch.
 		var marker = new L.Marker.Touch(latlng, {
 			draggable: true,
@@ -1818,6 +1818,7 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		});
 
 		marker._origLatLng = latlng;
+		marker._parentIndex = parentIndex;
 		marker._index = index;
 
 		marker
@@ -1838,21 +1839,25 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		this._poly.fire('editstart');
 	},
 
-	_spliceLatLngs: function () {
+	_spliceLatLngs: function (parentIndex, index, deleteCount, item) {
 		var latlngs = this._defaultShape();
-		var removed = [].splice.apply(latlngs, arguments);
+
+		latlngs = (latlngs[0] instanceof Array ? latlngs : [latlngs]);
+
+		var removed = (item ? latlngs[parentIndex].splice(index, deleteCount, item) : latlngs[parentIndex].splice(index, deleteCount));
 		this._poly._convertLatLngs(latlngs, true);
 		this._poly.redraw();
 		return removed;
 	},
 
 	_removeMarker: function (marker) {
-		var i = marker._index;
+		var i = marker._parentIndex,
+			j = marker._index;
 
 		this._markerGroup.removeLayer(marker);
-		this._markers.splice(i, 1);
-		this._spliceLatLngs(i, 1);
-		this._updateIndexes(i, -1);
+		this._markers[i].splice(j, 1);
+		this._spliceLatLngs(i, j, 1);
+		this._updateIndexes(i, j, -1);
 
 		marker
 			.off('dragstart', this._onMarkerDragStart, this)
@@ -1929,8 +1934,11 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		var minPoints = L.Polygon && (this._poly instanceof L.Polygon) ? 4 : 3,
 			marker = e.target;
 
+		var latlngs = this._defaultShape();
+		latlngs = (latlngs[0] instanceof Array ? latlngs : [latlngs]);
+
 		// If removing this point would create an invalid polyline/polygon don't remove
-		if (this._defaultShape().length < minPoints) {
+		if (latlngs[marker._parentIndex].length < minPoints) {
 			return;
 		}
 
@@ -1981,9 +1989,9 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 		this.updateMarkers();
 	},
 
-	_updateIndexes: function (index, delta) {
+	_updateIndexes: function (parentIndex, index, delta) {
 		this._markerGroup.eachLayer(function (marker) {
-			if (marker._index > index) {
+			if (marker._parentIndex == parentIndex && marker._index > index) {
 				marker._index += delta;
 			}
 		});
@@ -2002,9 +2010,11 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 
 		onDragStart = function () {
 			marker.off('touchmove', onDragStart, this);
-			var i = marker2._index;
+			var i = marker2._parentIndex,
+				j = marker2._index;
 
-			marker._index = i;
+			marker._parentIndex = i;
+			marker._index = j;
 
 			marker
 				.off('click', onClick, this)
@@ -2012,12 +2022,12 @@ L.Edit.PolyVerticesEdit = L.Handler.extend({
 
 			latlng.lat = marker.getLatLng().lat;
 			latlng.lng = marker.getLatLng().lng;
-			this._spliceLatLngs(i, 0, latlng);
-			this._markers.splice(i, 0, marker);
+			this._spliceLatLngs(i, j, 0, latlng);
+			this._markers[i].splice(j, 0, marker);
 
 			marker.setOpacity(1);
 
-			this._updateIndexes(i, 1);
+			this._updateIndexes(i, j, 1);
 			marker2._index++;
 			this._updatePrevNext(marker1, marker);
 			this._updatePrevNext(marker, marker2);
